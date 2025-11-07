@@ -17,19 +17,27 @@ NUMBER_TO_ADD = 2
 INPUT_BITS = 16
 
 # The number of bits in the output integer
-OUTPUT_BITS = INPUT_BITS * 2
+OUTPUT_BITS = INPUT_BITS + 1
 
 # The number of neurons in the hidden layer
-HIDDEN_LAYER_SIZE = 64
+# Changing from 32 to 64 improved performance significantly
+HIDDEN_LAYERS_SIZE = 64
 
 # The number of examples to train on
-DATASET_SIZE = 40 * 1600
+DATASET_SIZE = 4000
+
+# Batch size for training
+BATCH_SIZE = 128
 
 # The number of training iterations
 EPOCHS = 4000
 
 # How much to change the gradients by when updating weights
-LEARNING_RATE = 5.0
+LEARNING_RATE = 0.6
+# With shorter outputs
+# 0.5 -> 0.02830662950873375 28% fejl
+# 0.6 -> 0.0029239095747470856 5% fejl
+# 1.0 -> 0.01887655071914196 15% fejl
 
 # Print the loss for each epoch during training
 PRINT_TRAINING_PROGRESS = True
@@ -75,39 +83,57 @@ Y = torch.tensor(Y, dtype=torch.float32)
 
 # Setup the neural network
 
-# INPUT_BITS inputs to OUTPUT_BITS neurons
-W1 = torch.randn((INPUT_BITS, HIDDEN_LAYER_SIZE), generator=g, requires_grad=True)
+# INPUT_BITS inputs to HIDDEN_LAYERS_SIZE neurons
+W1 = torch.randn((INPUT_BITS, HIDDEN_LAYERS_SIZE), generator=g, requires_grad=True)
 
-# Bias for each output neuron
-B1 = torch.randn((HIDDEN_LAYER_SIZE,), generator=g, requires_grad=True)
+# Bias for first hidden layer
+B1 = torch.randn((HIDDEN_LAYERS_SIZE,), generator=g, requires_grad=True)
 
-W2 = torch.randn((HIDDEN_LAYER_SIZE, OUTPUT_BITS), generator=g, requires_grad=True)
-B2 = torch.randn((OUTPUT_BITS,), generator=g, requires_grad=True)
+# Second hidden layer
+W2 = torch.randn((HIDDEN_LAYERS_SIZE, HIDDEN_LAYERS_SIZE), generator=g, requires_grad=True)
+B2 = torch.randn((HIDDEN_LAYERS_SIZE,), generator=g, requires_grad=True)
 
-parameters = [W1, B1, W2, B2]
+# Output layer
+W3 = torch.randn((HIDDEN_LAYERS_SIZE, OUTPUT_BITS), generator=g, requires_grad=True)
+B3 = torch.randn((OUTPUT_BITS,), generator=g, requires_grad=True)
+
+parameters = [W1, B1, W2, B2, W3, B3]
 
 # Training loop
-# In each iteration, we will use the entire dataset to train the model
-for i in range(EPOCHS):
-    # Unnormalized output of the model
-    hidden = torch.relu(X @ W1 + B1)
-    logits = hidden @ W2 + B2
+# In each epoch, we process the dataset in batches
+for epoch in range(EPOCHS):
+    epoch_loss = 0.0
+    num_batches = 0
+    
+    # Process dataset in batches
+    for batch_start in range(0, DATASET_SIZE, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, DATASET_SIZE)
+        X_batch = X[batch_start:batch_end]
+        Y_batch = Y[batch_start:batch_end]
+        
+        # Forward pass
+        hidden1 = torch.relu(X_batch @ W1 + B1)
+        hidden2 = torch.relu(hidden1 @ W2 + B2)
+        logits = hidden2 @ W3 + B3
 
-    loss = F.binary_cross_entropy_with_logits(logits, Y)
+        loss = F.binary_cross_entropy_with_logits(logits, Y_batch)
+        epoch_loss += loss.item()
+        num_batches += 1
+
+        # set the gradients to zero
+        for p in parameters:
+            p.grad = None
+
+        # Update gradients
+        loss.backward()
+
+        # Update weights by moving in the direction of negative gradient (gradient descent)
+        for p in parameters:
+            p.data += -LEARNING_RATE * p.grad
 
     if PRINT_TRAINING_PROGRESS:
-        print(f'Loss (Epoch {i+1}/{EPOCHS}): {loss.item()}')
-
-    # set the gradients to zero
-    for p in parameters:
-        p.grad = None
-
-    # Update gradients
-    loss.backward()
-
-    # Update weights by moving in the direction of negative gradient (gradient descent)
-    for p in parameters:
-        p.data += -LEARNING_RATE * p.grad
+        avg_loss = epoch_loss / num_batches
+        print(f'Loss (Epoch {epoch+1}/{EPOCHS}):\t{avg_loss}')
 
 
 # Use the trained model to make predictions
@@ -118,8 +144,9 @@ for i in range(100):
     x_bits = int_to_bits(n, INPUT_BITS)
     x_tensor = torch.tensor([x_bits], dtype=torch.float32)
 
-    hidden = torch.relu(x_tensor @ W1 + B1)
-    logits = hidden @ W2 + B2
+    hidden1 = torch.relu(x_tensor @ W1 + B1)
+    hidden2 = torch.relu(hidden1 @ W2 + B2)
+    logits = hidden2 @ W3 + B3
     probs = torch.sigmoid(logits)
 
     # Convert probabilities to bits (0 or 1)
