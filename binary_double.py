@@ -25,10 +25,10 @@ OUTPUT_BITS = INPUT_BITS + 1
 DATASET_SIZE = 200
 
 # The number of training iterations
-EPOCHS = 400
+EPOCHS = 100
 
 # How much to change the gradients by when updating weights
-LEARNING_RATE = 50.0
+LEARNING_RATE = 150.0
 
 # Print the loss for each epoch during training
 PRINT_TRAINING_PROGRESS = False
@@ -80,6 +80,8 @@ W1 = torch.randn((INPUT_BITS, OUTPUT_BITS), generator=g, requires_grad=True)
 # Bias for each output neuron
 B1 = torch.randn((OUTPUT_BITS,), generator=g, requires_grad=True)
 
+parameters = [W1, B1]
+
 # Training loop
 # In each iteration, we will use the entire dataset to train the model
 for i in range(EPOCHS):
@@ -92,13 +94,15 @@ for i in range(EPOCHS):
         print(f'Loss (Epoch {i}/{EPOCHS}): {loss.item()}')
 
     # set the gradients to zero
-    W1.grad = None
+    for p in parameters:
+        p.grad = None
 
     # Update gradients
     loss.backward()
 
     # Update weights by moving in the direction of negative gradient (gradient descent)
-    W1.data += -LEARNING_RATE * W1.grad
+    for p in parameters:
+        p.data += -LEARNING_RATE * p.grad
 
 
 # Use the trained model to make predictions
